@@ -1,0 +1,90 @@
+<div class="game-container flex flex-col items-center justify-center min-h-screen bg-neutral-900 font-mono text-white">
+  <h1 class="text-4xl font-bold mb-4 text-amber-500">Bob really needs to poop</h1>
+
+  <div class="relative shadow-2xl shadow-black rounded-lg overflow-hidden border-4 border-amber-700">
+    <!-- Canvas -->
+    <canvas #gameCanvas width="800" height="600" class="block bg-neutral-800"></canvas>
+
+    <!-- UI Overlay: HUD -->
+    @if (gameState() === 'PLAYING' || gameState() === 'LEVEL_TRANSITION') {
+      <div class="absolute top-0 left-0 w-full p-4 flex justify-between items-start pointer-events-none">
+        <div class="flex flex-col gap-1">
+          <span class="text-xl font-bold text-white drop-shadow-md">SCORE: {{ score() }}</span>
+          <span class="text-lg text-amber-400 drop-shadow-md">LEVEL: {{ level() }}</span>
+        </div>
+        <div class="flex flex-col items-end gap-1">
+          <span class="text-xl font-bold text-red-500 drop-shadow-md">LIVES: {{ lives() }}</span>
+          <span class="text-lg text-green-400 drop-shadow-md">FOOD: {{ food() }}</span>
+        </div>
+      </div>
+    }
+
+    <!-- UI Overlay: Menu -->
+    @if (gameState() === 'MENU') {
+      <div class="absolute inset-0 bg-black/80 flex flex-col items-center justify-center">
+        <h2 class="text-5xl font-bold text-amber-500 mb-8 animate-pulse text-center leading-tight">BOB REALLY<br>NEEDS TO POOP</h2>
+        <p class="text-xl mb-8 max-w-md text-center text-neutral-300">
+          Help Bob defeat the evil toilet boss! Eat food to increase your fart range. Fart on enemies to defeat them.
+        </p>
+        <div class="flex gap-8 mb-8 text-neutral-400">
+          <div class="flex flex-col items-center gap-2"><span class="text-3xl">⬆️⬇️⬅️➡️</span><span class="font-bold">Move</span></div>
+          <div class="flex flex-col items-center gap-2"><span class="text-3xl border-2 border-neutral-400 rounded px-4 py-1">SPACE</span><span class="font-bold">Fart</span></div>
+        </div>
+        <button (click)="startGame()" class="px-8 py-4 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl text-2xl transition-colors shadow-lg">
+          START GAME
+        </button>
+        <button (click)="gameState.set('HIGHSCORE_LIST')" class="mt-6 px-6 py-2 bg-neutral-700 hover:bg-neutral-600 text-white rounded-lg transition-colors">
+          Highscores
+        </button>
+      </div>
+    }
+
+    <!-- UI Overlay: Level Transition -->
+    @if (gameState() === 'LEVEL_TRANSITION') {
+      <div class="absolute inset-0 bg-black/60 flex flex-col items-center justify-center">
+        <h2 class="text-5xl font-bold text-green-400 mb-4 drop-shadow-lg">BOSS DEFEATED!</h2>
+        <p class="text-2xl text-white">Get ready for Level {{ level() + 1 }}...</p>
+      </div>
+    }
+
+    <!-- UI Overlay: Enter Highscore -->
+    @if (gameState() === 'ENTER_HIGHSCORE') {
+      <div class="absolute inset-0 bg-black/90 flex flex-col items-center justify-center">
+        <h2 class="text-6xl font-bold text-red-500 mb-4">GAME OVER</h2>
+        <p class="text-2xl text-white mb-8">Final Score: <span class="text-amber-400 font-bold">{{ score() }}</span></p>
+
+        <div class="bg-neutral-800 p-8 rounded-xl border-2 border-neutral-600 flex flex-col items-center">
+          <label for="initialsInput" class="text-xl mb-4 text-amber-400">Enter 3 Initials:</label>
+          <input id="initialsInput" type="text" [formControl]="initialsControl" maxlength="3" class="w-32 text-center text-4xl bg-neutral-900 border-2 border-neutral-500 rounded p-2 text-white uppercase focus:border-amber-500 focus:outline-none mb-6">
+          <button (click)="saveHighscore()" [disabled]="initialsControl.invalid" class="px-8 py-3 bg-amber-600 hover:bg-amber-500 disabled:bg-neutral-600 disabled:text-neutral-400 text-white font-bold rounded-lg text-xl transition-colors">
+            SAVE SCORE
+          </button>
+        </div>
+      </div>
+    }
+
+    <!-- UI Overlay: Highscore List -->
+    @if (gameState() === 'HIGHSCORE_LIST') {
+      <div class="absolute inset-0 bg-black/90 flex flex-col items-center justify-center p-8">
+        <h2 class="text-4xl font-bold text-amber-500 mb-8">HIGHSCORES</h2>
+        <div class="w-full max-w-md bg-neutral-800 rounded-xl p-6 border-2 border-neutral-700 mb-8">
+          @if (highscores().length === 0) {
+            <p class="text-center text-neutral-400">No highscores yet!</p>
+          } @else {
+            <div class="flex flex-col gap-2">
+              @for (hs of highscores(); track $index) {
+                <div class="flex justify-between items-center border-b border-neutral-700 pb-2">
+                  <span class="text-2xl font-bold text-neutral-300">{{ $index + 1 }}. {{ hs.initials }}</span>
+                  <span class="text-2xl text-amber-400">{{ hs.score }}</span>
+                </div>
+              }
+            </div>
+          }
+        </div>
+        <button (click)="showMenu()" class="px-8 py-3 bg-neutral-700 hover:bg-neutral-600 text-white font-bold rounded-lg text-xl transition-colors">
+          MAIN MENU
+        </button>
+      </div>
+    }
+  </div>
+</div>
