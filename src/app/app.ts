@@ -36,6 +36,88 @@ interface Entity extends Rect {
   shootTimer?: number;
   hurtTimer?: number;
   timer?: number;
+  kills?: number;
+}
+
+class SoundEngine {
+  ctx: AudioContext | null = null;
+
+  init() {
+    if (!this.ctx && typeof window !== 'undefined' && (window.AudioContext || (window as any).webkitAudioContext)) {
+      this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+  }
+
+  playTone(freq: number, type: OscillatorType, duration: number, vol: number = 0.1) {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+    
+    gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    
+    osc.start();
+    osc.stop(this.ctx.currentTime + duration);
+  }
+
+  playFart() {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(100, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.3);
+    
+    gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.3);
+  }
+
+  playEat() {
+    this.playTone(600, 'square', 0.1, 0.1);
+    setTimeout(() => this.playTone(800, 'square', 0.1, 0.1), 100);
+  }
+
+  playLife() {
+    this.playTone(400, 'sine', 0.1, 0.1);
+    setTimeout(() => this.playTone(500, 'sine', 0.1, 0.1), 100);
+    setTimeout(() => this.playTone(600, 'sine', 0.2, 0.1), 200);
+  }
+
+  playEnemyDie() {
+    this.playTone(150, 'square', 0.2, 0.1);
+  }
+
+  playBossHurt() {
+    this.playTone(100, 'sawtooth', 0.2, 0.2);
+  }
+
+  playBossDie() {
+    this.playTone(100, 'sawtooth', 0.5, 0.3);
+    setTimeout(() => this.playTone(80, 'sawtooth', 0.5, 0.3), 200);
+    setTimeout(() => this.playTone(60, 'sawtooth', 0.8, 0.3), 400);
+  }
+
+  playPlayerHurt() {
+    this.playTone(200, 'sawtooth', 0.3, 0.2);
+    setTimeout(() => this.playTone(150, 'sawtooth', 0.3, 0.2), 100);
+  }
+
+  playGameOver() {
+    this.playTone(300, 'square', 0.4, 0.2);
+    setTimeout(() => this.playTone(250, 'square', 0.4, 0.2), 300);
+    setTimeout(() => this.playTone(200, 'square', 0.8, 0.2), 600);
+  }
 }
 
 class GameEngine {
@@ -49,6 +131,8 @@ class GameEngine {
   keys: Record<string, boolean> = {};
   boss: Entity | null = null;
   fartCooldown = 0;
+  fartCount = 0;
+  sounds = new SoundEngine();
 
   onGameOver: () => void = () => undefined;
   onLevelComplete: () => void = () => undefined;
@@ -89,6 +173,15 @@ class GameEngine {
         vy: type === 'person' ? (Math.random() > 0.5 ? 1 : -1) * 100 : 0,
       });
     }
+
+    for (let i = 0; i < Math.max(1, Math.floor(level / 2)); i++) {
+      let bx, by;
+      do {
+        bx = Math.random() * (800 - 80) + 40;
+        by = Math.random() * (400 - 120) + 120;
+      } while (this.collidesWithWall({x: bx, y: by, w: 16, h: 16}));
+      this.items.push({ x: bx, y: by, w: 16, h: 16, type: 'bad_food' });
+    }
   }
 
   update(dt: number) {
@@ -105,13 +198,54 @@ class GameEngine {
     if (this.fartCooldown > 0) this.fartCooldown -= dt;
     if (this.keys[' '] && this.fartCooldown <= 0) {
       this.fartCooldown = 0.5;
-      const range = 40 + this.player.food * 20;
+      this.sounds.playFart();
+      
+      this.fartCount++;
+      if (this.fartCount >= 10) {
+        this.fartCount = 0;
+        if (this.player.food > 0) {
+          this.player.food--;
+          this.onFoodChange(this.player.food);
+        }
+      }
+
+      const growth = this.player.food * 20;
       let fx = this.player.x, fy = this.player.y, fw = this.player.w, fh = this.player.h;
-      if (this.player.dir === 'up') { fy -= range; fh = range; }
-      if (this.player.dir === 'down') { fy += this.player.h; fh = range; }
-      if (this.player.dir === 'left') { fx -= range; fw = range; }
-      if (this.player.dir === 'right') { fx += this.player.w; fw = range; }
-      this.farts.push({ x: fx, y: fy, w: fw, h: fh, timer: 0.3 });
+      let fartDir = '';
+
+      if (this.player.dir === 'up') { 
+        fartDir = 'down';
+        fx -= growth / 2;
+        fw += growth;
+        fy += this.player.h; 
+        fh = 40 + growth; 
+      }
+      else if (this.player.dir === 'down') { 
+        fartDir = 'up';
+        fx -= growth / 2;
+        fw += growth;
+        fy -= (40 + growth); 
+        fh = 40 + growth; 
+      }
+      else if (this.player.dir === 'left') { 
+        fartDir = 'right';
+        fy -= growth / 2;
+        fh += growth;
+        fx += this.player.w; 
+        fw = 40 + growth; 
+      }
+      else if (this.player.dir === 'right') { 
+        fartDir = 'left';
+        fy -= growth / 2;
+        fh += growth;
+        fx -= (40 + growth); 
+        fw = 40 + growth; 
+      }
+
+      const clipped = this.clipFart(fx, fy, fw, fh, fartDir);
+      if (clipped.w > 0 && clipped.h > 0) {
+        this.farts.push({ x: clipped.x, y: clipped.y, w: clipped.w, h: clipped.h, timer: 0.3, kills: 0 });
+      }
     }
 
     for (let i = this.farts.length - 1; i >= 0; i--) {
@@ -188,8 +322,11 @@ class GameEngine {
         this.onLivesChange(this.player.lives);
         this.player.invuln = 2;
         if (this.player.lives <= 0) {
+          this.sounds.playGameOver();
           this.onGameOver();
           return;
+        } else {
+          this.sounds.playPlayerHurt();
         }
       }
     }
@@ -201,10 +338,17 @@ class GameEngine {
           this.player.food++;
           this.onFoodChange(this.player.food);
           this.score += 50;
+          this.sounds.playEat();
+        } else if (item.type === 'bad_food') {
+          this.player.food = Math.max(0, this.player.food - 2);
+          this.onFoodChange(this.player.food);
+          this.score -= 20;
+          this.sounds.playPlayerHurt();
         } else if (item.type === 'life') {
           this.player.lives++;
           this.onLivesChange(this.player.lives);
           this.score += 100;
+          this.sounds.playLife();
         }
         this.onScoreChange(this.score);
         this.items.splice(i, 1);
@@ -212,19 +356,39 @@ class GameEngine {
     }
 
     for (const f of this.farts) {
-      for (let i = this.enemies.length - 1; i >= 0; i--) {
-        if (this.rectIntersect(f, this.enemies[i])) {
-          if (Math.random() < 0.3) {
-            this.items.push({
-              x: this.enemies[i].x, y: this.enemies[i].y, w: 16, h: 16,
-              type: Math.random() < 0.2 ? 'life' : 'food'
-            });
+      if (f.kills! < 3) {
+        let hitEnemies = [];
+        for (let i = 0; i < this.enemies.length; i++) {
+          if (this.rectIntersect(f, this.enemies[i])) {
+            hitEnemies.push(this.enemies[i]);
           }
-          this.enemies.splice(i, 1);
-          this.score += 10;
-          this.onScoreChange(this.score);
+        }
+        hitEnemies.sort((a, b) => {
+          const distA = Math.hypot(a.x! - this.player.x, a.y! - this.player.y);
+          const distB = Math.hypot(b.x! - this.player.x, b.y! - this.player.y);
+          return distA - distB;
+        });
+
+        for (const hit of hitEnemies) {
+          if (f.kills! >= 3) break;
+          const eIndex = this.enemies.indexOf(hit);
+          if (eIndex !== -1) {
+            if (Math.random() < 0.3) {
+              const rand = Math.random();
+              const type = rand < 0.2 ? 'life' : (rand < 0.5 ? 'bad_food' : 'food');
+              this.items.push({
+                x: hit.x, y: hit.y, w: 16, h: 16, type
+              });
+            }
+            this.enemies.splice(eIndex, 1);
+            this.score += 10;
+            this.onScoreChange(this.score);
+            this.sounds.playEnemyDie();
+            f.kills!++;
+          }
         }
       }
+
       for (let i = this.projectiles.length - 1; i >= 0; i--) {
         if (this.rectIntersect(f, this.projectiles[i])) {
           this.projectiles.splice(i, 1);
@@ -241,7 +405,10 @@ class GameEngine {
           this.boss = null;
           this.score += 1000 * this.level;
           this.onScoreChange(this.score);
+          this.sounds.playBossDie();
           this.onLevelComplete();
+        } else {
+          this.sounds.playBossHurt();
         }
       }
     }
@@ -272,6 +439,11 @@ class GameEngine {
         ctx.fillStyle = '#8B4513';
         ctx.fillRect(item.x, item.y, item.w, item.h);
         ctx.fillStyle = '#FFA500';
+        ctx.fillRect(item.x + 2, item.y + 2, item.w - 4, item.h - 4);
+      } else if (item.type === 'bad_food') {
+        ctx.fillStyle = '#00008B';
+        ctx.fillRect(item.x, item.y, item.w, item.h);
+        ctx.fillStyle = '#4169E1';
         ctx.fillRect(item.x + 2, item.y + 2, item.w - 4, item.h - 4);
       } else if (item.type === 'life') {
         ctx.fillStyle = '#f00';
@@ -364,6 +536,64 @@ class GameEngine {
       }
     }
     return false;
+  }
+
+  clipFart(fx: number, fy: number, fw: number, fh: number, dir: string) {
+    const isWall = (cx: number, cy: number) => {
+      if (cy < 0 || cy >= MAP_HEIGHT || cx < 0 || cx >= MAP_WIDTH) return true;
+      return MAP[cy][cx] === 1;
+    };
+
+    const cx = Math.floor((fx + fw / 2) / TILE_SIZE);
+    const cy = Math.floor((fy + fh / 2) / TILE_SIZE);
+
+    if (dir === 'down') {
+      let maxH = fh;
+      for (let y = Math.floor(fy / TILE_SIZE); y <= Math.floor((fy + fh - 0.1) / TILE_SIZE); y++) {
+        if (isWall(cx, y)) {
+          maxH = y * TILE_SIZE - fy;
+          break;
+        }
+      }
+      return { x: fx, y: fy, w: fw, h: Math.max(0, maxH) };
+    }
+    if (dir === 'up') {
+      let maxH = fh;
+      let newFy = fy;
+      for (let y = Math.floor((fy + fh - 0.1) / TILE_SIZE); y >= Math.floor(fy / TILE_SIZE); y--) {
+        if (isWall(cx, y)) {
+          const wallBottom = (y + 1) * TILE_SIZE;
+          maxH = (fy + fh) - wallBottom;
+          newFy = wallBottom;
+          break;
+        }
+      }
+      return { x: fx, y: newFy, w: fw, h: Math.max(0, maxH) };
+    }
+    if (dir === 'right') {
+      let maxW = fw;
+      for (let x = Math.floor(fx / TILE_SIZE); x <= Math.floor((fx + fw - 0.1) / TILE_SIZE); x++) {
+        if (isWall(x, cy)) {
+          maxW = x * TILE_SIZE - fx;
+          break;
+        }
+      }
+      return { x: fx, y: fy, w: Math.max(0, maxW), h: fh };
+    }
+    if (dir === 'left') {
+      let maxW = fw;
+      let newFx = fx;
+      for (let x = Math.floor((fx + fw - 0.1) / TILE_SIZE); x >= Math.floor(fx / TILE_SIZE); x--) {
+        if (isWall(x, cy)) {
+          const wallRight = (x + 1) * TILE_SIZE;
+          maxW = (fx + fw) - wallRight;
+          newFx = wallRight;
+          break;
+        }
+      }
+      return { x: newFx, y: fy, w: Math.max(0, maxW), h: fh };
+    }
+    return { x: fx, y: fy, w: fw, h: fh };
   }
 
   rectIntersect(r1: Rect, r2: Rect) {
@@ -460,6 +690,7 @@ export class App implements AfterViewInit, OnDestroy {
   }
 
   startGame() {
+    this.engine.sounds.init();
     this.level.set(1);
     this.score.set(0);
     this.lives.set(3);
@@ -467,6 +698,7 @@ export class App implements AfterViewInit, OnDestroy {
     this.engine.score = 0;
     this.engine.player.lives = 3;
     this.engine.player.food = 0;
+    this.engine.fartCount = 0;
     this.engine.startLevel(1);
     this.gameState.set('PLAYING');
   }
@@ -483,7 +715,7 @@ export class App implements AfterViewInit, OnDestroy {
     if (this.initialsControl.invalid) return;
     const initials = this.initialsControl.value!.toUpperCase();
     const newHs = { initials, score: this.score() };
-    const hs = [...this.highscores(), newHs].sort((a, b) => b.score - a.score).slice(0, 10);
+    const hs = [...this.highscores(), newHs].sort((a, b) => b.score - a.score).slice(0, 7);
     this.highscores.set(hs);
     if (isPlatformBrowser(this.platformId)) {
       localStorage.setItem('bob_highscores', JSON.stringify(hs));
